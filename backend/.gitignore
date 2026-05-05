@@ -1,0 +1,82 @@
+# ── Environment & Secrets — NEVER commit these ──
+.env
+.env.*
+.env.local
+.env.production
+.env.staging
+!.env.example
+# .env.example IS committed — it's a template with no real values
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ── Virtual environments ──
+venv/
+env/
+ENV/
+.venv/
+.env/
+# Note: the folder named "venv" not the .env file
+
+# ── Testing ──
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# ── Type checking ──
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# ── Database ──
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Alembic ──
+# Keep migrations/ folder — it's important
+# But ignore any local DB references
+
+# ── IDE ──
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# ── Distribution ──
+*.pyc
+*.pyd
+*.pyo
+
+# ── macOS ──
+.DS_Store
+
+# ── Test Python Files ──
+*.py
