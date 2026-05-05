@@ -79,4 +79,7 @@ dmypy.json
 .DS_Store
 
 # ── Test Python Files ──
-*.py
+razorpay_test.py
+seed_admin.py
+seed_ailments.py
+seed_doctor.py
