@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import toast from "react-hot-toast"
 import { consultationsApi } from "../api/consultations.api"
 
-const QUERY_KEY = ["consultations"]
+const QUERY_KEY = ["consultations", "user-consultations"]
 
 export const useConsultations = () => {
   return useQuery({

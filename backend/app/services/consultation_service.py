@@ -89,6 +89,9 @@ async def create_consultation(
     )
 
     ai_questions = await generate_questions_with_cache(
+        db = db,
+        patient_id=patient_id,
+        consultation_id=consultation.id,
         ailment_name=ailment.name,
         ailment_id=ailment.id,
         age=compute_age(member.dob) if member and member.dob else 0,

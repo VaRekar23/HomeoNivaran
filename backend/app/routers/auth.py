@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.db import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, get_access_token
 from app.models.user import User
 from app.schemas.auth import (
     RegisterRequest, RegisterResponse,
@@ -23,7 +23,7 @@ limiter = Limiter(key_func=get_remote_address)
     summary="Register a new patient",
     description="Creates a new patient account. Only patients can self-register."
 )
-@limiter.limit("3/minute")
+@limiter.limit("3/minute;15/hour;40/day")
 async def register(
     request: Request,
     data: RegisterRequest,
@@ -45,7 +45,7 @@ async def register(
     status_code=status.HTTP_200_OK,
     summary="Login and get access token"
 )
-@limiter.limit("5/minute")
+@limiter.limit("5/minute;20/hour;50/day")
 async def login(
     request: Request,
     data: LoginRequest,
@@ -97,7 +97,9 @@ async def refresh(
     summary="Logout current user"
 )
 async def logout(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    token: str = Depends(get_access_token),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Logs out the current user.
@@ -108,4 +110,5 @@ async def logout(
     # JWT tokens can't be invalidated server-side without a blocklist
     # For now we just confirm logout — frontend deletes the token
     # TODO: Add Redis token blocklist for production
-    return {"message": f"Goodbye {current_user.name}, logged out successfully"}
+    return await auth_service.logout_user(current_user, db, token)
+    

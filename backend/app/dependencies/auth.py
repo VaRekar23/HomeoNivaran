@@ -1,10 +1,11 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.dependencies.db import get_db
 from app.models.user import User
+from app.models.blocked_token import BlockedToken
 from app.utils.jwt import decode_access_token
 
 # This tells FastAPI where clients send their token
@@ -13,6 +14,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 async def get_current_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
 ) -> User:
@@ -41,13 +43,21 @@ async def get_current_user(
     payload = decode_access_token(token)
     if payload is None:
         raise credentials_exception
+    
+    # Step 2 — Validate if token is blocklisted
+    jti = payload.get("jti")
+    result = await db.execute(
+        select(BlockedToken).where(BlockedToken.jti == jti)
+    )
+    if result.scalar_one_or_none():
+        raise credentials_exception
 
-    # Step 2 — Extract user ID from payload
+    # Step 3 — Extract user ID from payload
     user_id: str = payload.get("sub")
     if user_id is None:
         raise credentials_exception
 
-    # Step 3 — Fetch user from database
+    # Step 4 — Fetch user from database
     result = await db.execute(
         select(User).where(User.id == user_id)
     )
@@ -56,12 +66,15 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
 
-    # Step 4 — Check account is active
+    # Step 5 — Check account is active
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated"
         )
+    
+    request.state.user_id   = str(user.id)
+    request.state.user_role = user.role
 
     return user
 
@@ -112,3 +125,8 @@ async def require_admin(
             detail="Access restricted to administrators only"
         )
     return current_user
+
+async def get_access_token(
+    token: str = Depends(oauth2_scheme)
+) -> str:
+    return token

@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from fastapi import HTTPException, status
 import uuid
 
@@ -7,6 +7,7 @@ from app.models.family_member import FamilyMember
 from app.schemas.family_member import FamilyMemberCreate, FamilyMemberUpdate
 from app.utils.date_utils import compute_age
 
+MAX_FAMILY_MEMBERS = 10
 
 def _member_to_dict(member: FamilyMember) -> dict:
     """
@@ -119,6 +120,19 @@ async def create_member(
     Prevents duplicate name+relation combinations.
     Returns dict with computed age.
     """
+    # Check existing count of active family members for user
+    result = await db.execute(
+        select(func.count(FamilyMember.id))
+        .where(FamilyMember.user_id == user_id)
+    )
+    current_count = result.scalar()
+    
+    if current_count >= MAX_FAMILY_MEMBERS:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Maximum of {MAX_FAMILY_MEMBERS} family members allowed per account"
+        )
+
     # Check for duplicate: same user, same name, same relation
     existing_result = await db.execute(
         select(FamilyMember).where(

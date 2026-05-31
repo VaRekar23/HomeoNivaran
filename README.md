@@ -6,7 +6,7 @@ Online homeopathy teleconsultation platform built with FastAPI + React.
 
 **Backend:** FastAPI, SQLAlchemy 2.0 async, PostgreSQL (Neon.tech), Redis  
 **Frontend:** React 18, Vite, Tailwind CSS v3, Zustand, React Query  
-**AI:** Anthropic Claude  
+**AI:** OpenAI  
 **Payments:** Razorpay  
 **Deployment:** Google Cloud Run + Firebase Hosting  
 

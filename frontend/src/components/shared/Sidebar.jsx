@@ -149,6 +149,11 @@ const NAV_CONFIG = {
       to: "/admin/analytics", 
       icon: TrendingUp 
     },
+    { 
+      label: "Monitor", 
+      to: "/admin/monitor", 
+      icon: Activity 
+    },
   ],
 }
 

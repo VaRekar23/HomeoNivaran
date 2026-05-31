@@ -16,6 +16,9 @@ from app.models.doctor_availability import DoctorAvailability
 from app.models.inventory import MedicineInventory
 from app.models.inventory import InventoryMovement
 from app.models.treatment_feedback import TreatmentFeedback
+from app.models.blocked_token import BlockedToken
+from app.models.api_request_log import APIRequestLog
+from app.models.ai_usage_log import AIUsageLog
 
 __all__ = [
     "User",
@@ -36,4 +39,7 @@ __all__ = [
     "MedicineInventory",
     "InventoryMovement",
     "TreatmentFeedback",
+    "BlockedToken",
+    "AIUsageLog",
+    "APIRequestLog",
 ]

@@ -3,7 +3,7 @@ import toast from "react-hot-toast"
 import { ordersApi } from "../api/orders.api"
 import { paymentsApi } from "../api/payments.api"
 
-const ORDERS_KEY = ["orders"]
+const ORDERS_KEY = ["orders", "user-orders"]
 
 export const useOrders = () => {
   return useQuery({

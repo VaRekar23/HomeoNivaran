@@ -9,6 +9,10 @@ def compute_age(dob: date) -> int:
     """Compute age in years from date of birth."""
     today = date.today()
     years = today.year - dob.year
+
+    if dob > today:
+        raise ValueError("Date of birth cannot be in the future")
+    
     # Subtract 1 if birthday hasn't occurred yet this year
     if (today.month, today.day) < (dob.month, dob.day):
         years -= 1

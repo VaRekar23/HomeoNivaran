@@ -25,7 +25,7 @@ class RegisterResponse(BaseModel):
     name: str
     email: str
     phone: str
-    role: str
+    # role: str
     created_at: datetime
 
 

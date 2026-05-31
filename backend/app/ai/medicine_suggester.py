@@ -1,7 +1,9 @@
+import uuid
 import json
 import logging
 from app.ai.client import get_provider
 from app.ai.prompts import MEDICINE_SUGGESTER_PROMPT
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +15,9 @@ DISCLAIMER = (
 
 
 async def suggest_medicines(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    consultation_id: uuid.UUID,
     ailment_name: str,
     patient_summary: str
 ) -> list[dict]:
@@ -23,15 +28,18 @@ async def suggest_medicines(
     Returns list of medicine suggestion dicts.
     On failure returns empty list — doctor can still prescribe manually.
     """
-
     prompt = MEDICINE_SUGGESTER_PROMPT.format(
         ailment=ailment_name,
         patient_summary=patient_summary
     )
 
     try:
+        import time
+        start = time.monotonic()
         provider = get_provider()
-        raw_text = await provider.complete(prompt, max_tokens=1500)
+        raw_text, usage = await provider.complete_with_usage(prompt, max_tokens=1500)
+        duration_ms = int((time.monotonic() - start) * 1000)
+
         raw_text = raw_text.strip()
         
         # Clean markdown fences if AI adds them
@@ -61,6 +69,21 @@ async def suggest_medicines(
             f"Generated {len(normalized)} medicine suggestions "
             f"for ailment='{ailment_name}'"
         )
+
+        from app.services.ai_usage_service import log_ai_usage
+        await log_ai_usage(
+            db=db,
+            feature="medicine_suggestion",
+            model=usage.get("model", "unknown"),
+            provider=usage.get("provider", "openai"),
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            duration_ms=duration_ms,
+            was_cached=False,
+            consultation_id=consultation_id,
+            user_id=user_id,
+        )
+
         return normalized
 
     except json.JSONDecodeError as e:

@@ -3,7 +3,7 @@ import toast from "react-hot-toast"
 import { familyApi } from "../api/family.api"
 
 // Query key constant — used everywhere to identify this cache
-const QUERY_KEY = ["family-members"]
+const QUERY_KEY = ["family-members", "user-family"]
 
 // ── Fetch all members ──
 export const useFamilyMembers = () => {

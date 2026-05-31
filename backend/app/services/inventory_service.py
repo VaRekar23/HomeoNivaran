@@ -3,13 +3,14 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from fastapi import HTTPException, status
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Annotated
 
 from app.models.inventory import MedicineInventory, InventoryMovement
 
 logger = logging.getLogger(__name__)
 
+PositivePrice = Annotated[float, Field(gt=0, description="Must be a positive value")]
 
 class InventoryCreate(BaseModel):
     medicine_name:     str
@@ -19,7 +20,7 @@ class InventoryCreate(BaseModel):
     unit:              str = "units"
     reorder_level:     int = 10
     cost_price:        float = 0
-    selling_price:     float = 0
+    selling_price:     float = PositivePrice
     supplier:          Optional[str] = None
     notes:             Optional[str] = None
 

@@ -2,6 +2,7 @@ import logging
 from unittest import result
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from app.middleware.request_logger import RequestLoggerMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
@@ -24,6 +25,26 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://www.google.com https://www.gstatic.com; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com; "
+            "frame-src https://api.razorpay.com; "
+        )
+        return response
 
 def setup_logging():
     """
@@ -113,6 +134,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestLoggerMiddleware)
 
     limiter = Limiter(key_func=get_remote_address)
     app.state.limiter = limiter

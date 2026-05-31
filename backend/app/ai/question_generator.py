@@ -1,4 +1,5 @@
 import json
+import time
 import logging
 from fastapi import HTTPException, status
 from app.ai.client import get_provider
@@ -6,10 +7,12 @@ from app.ai.prompts import QUESTION_GENERATOR_PROMPT
 
 import uuid
 from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cache.redis_client import cache_get, cache_set
 from app.cache.cache_keys import ai_questions_key
 from app.config import settings
+from app.services.ai_usage_service import log_ai_usage
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +23,7 @@ async def generate_questions(
     gender: str,
     known_allergies: Optional[str] = None,
     n: int = 7
-) -> list[dict]:
+) -> tuple[list[dict], dict]:
     """
     Generates clinical questions using the configured AI provider.
     Works with any provider — Anthropic, OpenAI, or others.
@@ -34,7 +37,11 @@ async def generate_questions(
 
     # Get provider lazily — created on first call
     provider = get_provider()
-    raw_text = await provider.complete(prompt, max_tokens=1500)
+    
+    start = time.monotonic()
+    raw_text, usage = await provider.complete_with_usage(prompt, max_tokens=1500)
+    duration_ms = int((time.monotonic() - start) * 1000)
+
     raw_text = raw_text.strip()
 
     # Clean markdown fences if AI adds them
@@ -66,7 +73,16 @@ async def generate_questions(
             f"Generated {len(normalized)} questions for "
             f"ailment='{ailment_name}' age={age} gender={gender}"
         )
-        return normalized
+
+        usage_metadata = {
+            "model":             usage.get("model", "unknown"),
+            "provider":          usage.get("provider", "openai"),
+            "prompt_tokens":     usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "duration_ms":       duration_ms,
+        }
+
+        return normalized, usage_metadata
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse AI response: {e}\nRaw: {raw_text}")
@@ -85,6 +101,9 @@ async def generate_questions(
 
 
 async def generate_questions_with_cache(
+    db:               AsyncSession,
+    patient_id:       uuid.UUID,
+    consultation_id:  uuid.UUID,
     ailment_name:     str,
     ailment_id:       uuid.UUID,
     age:              int,
@@ -122,6 +141,21 @@ async def generate_questions_with_cache(
             f"Cache HIT for questions: ailment={ailment_name} "
             f"age={age} gender={gender}"
         )
+
+        # Log usage if cached result is used
+        await log_ai_usage(
+            db=db,
+            feature="question_generation",
+            model="cached",
+            provider="cache",
+            prompt_tokens=0,
+            completion_tokens=0,
+            duration_ms=0,
+            was_cached=True,
+            consultation_id=consultation_id,
+            user_id=patient_id,
+        )
+
         return cached
 
     logger.info(
@@ -130,12 +164,25 @@ async def generate_questions_with_cache(
     )
 
     # ── Cache miss — call AI ──
-    questions = await generate_questions(
+    questions, usage = await generate_questions(
         ailment_name=ailment_name,
         age=age,
         gender=gender,
         known_allergies=known_allergies,
     )
+    
+    await log_ai_usage(
+            db=db,
+            feature="question_generation",
+            model=usage.get("model", "unknown"),
+            provider=usage.get("provider", "openai"),
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            duration_ms=usage.get("duration_ms", 0),
+            was_cached=False,
+            consultation_id=consultation_id,
+            user_id=patient_id,
+        )
 
     # ── Store in cache ──
     if questions:

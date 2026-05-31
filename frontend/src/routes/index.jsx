@@ -44,6 +44,7 @@ import UsersPage from "../pages/admin/UsersPage"
 import AdminOrdersPage from "../pages/admin/AdminOrdersPage"
 import HealthPage from "../pages/admin/HealthPage"
 import AnalyticsPage   from "../pages/admin/AnalyticsPage"
+import MonitorPage from "../pages/admin/MonitorPage"
 
 // We'll uncomment these as we build each page
 // Placeholder for now
@@ -122,6 +123,7 @@ export const router = createBrowserRouter([
       { path: "orders", element: <AdminOrdersPage /> },
       { path: "health", element: <HealthPage /> },
       { path: "analytics", element: <AnalyticsPage /> },
+      { path: "monitor", element: <MonitorPage /> },
     ],
   },
 

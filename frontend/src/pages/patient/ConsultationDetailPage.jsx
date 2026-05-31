@@ -570,7 +570,7 @@ const OrderSection = ({ consultationId }) => {
   const navigate = useNavigate()
 
   const { data: orders } = useQuery({
-    queryKey: ["orders"],
+    queryKey: ["orders", "consultation_detail"],
     queryFn: async () => {
       const res = await ordersApi.getAll()
       return Array.isArray(res.data) ? res.data : []

@@ -1,5 +1,5 @@
 import uuid
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.db import get_db
@@ -11,8 +11,11 @@ from app.schemas.family_member import (
     FamilyMemberResponse
 )
 from app.services import family_service
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 router = APIRouter(prefix="/family-members", tags=["Family Members"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get(
@@ -38,7 +41,9 @@ async def get_all_members(
     status_code=status.HTTP_201_CREATED,
     summary="Add a new family member"
 )
+@limiter.limit("10/minute")
 async def create_member(
+    request: Request,
     data: FamilyMemberCreate,
     current_user: User = Depends(require_patient),
     db: AsyncSession = Depends(get_db)

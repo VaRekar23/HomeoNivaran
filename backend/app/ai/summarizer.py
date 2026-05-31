@@ -1,11 +1,16 @@
+import uuid
 import logging
 from app.ai.client import get_provider
 from app.ai.prompts import PATIENT_SUMMARIZER_PROMPT
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
 
 async def summarize_patient(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    consultation_id: uuid.UUID,
     ailment_name: str,
     age: int,
     gender: str,
@@ -40,14 +45,32 @@ async def summarize_patient(
     )
 
     try:
+        import time
+        start = time.monotonic()
         provider = get_provider()
-        summary = await provider.complete(prompt, max_tokens=500)
+        summary, usage = await provider.complete_with_usage(prompt, max_tokens=500)
+        duration_ms = int((time.monotonic() - start) * 1000)
         summary = summary.strip()
 
         logger.info(
             f"Generated patient summary for "
             f"ailment='{ailment_name}' age={age} gender={gender}"
         )
+
+        from app.services.ai_usage_service import log_ai_usage
+        await log_ai_usage(
+            db=db,
+            feature="case_summary",
+            model=usage.get("model", "unknown"),
+            provider=usage.get("provider", "openai"),
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            duration_ms=duration_ms,
+            was_cached=False,
+            consultation_id=consultation_id,
+            user_id=user_id,
+        )
+
         return summary
 
     except Exception as e:

@@ -367,6 +367,9 @@ async def get_ai_summary(
 
     # Call AI summarizer
     summary = await summarize_patient(
+        db=db,
+        user_id=consultation.patient_id,
+        consultation_id=consultation.id,
         ailment_name=ailment.name if ailment else "Unknown",
         age=compute_age(member.dob) if member and member.dob else 0,
         gender=member.gender if member else "Unknown",
@@ -435,6 +438,9 @@ async def get_ai_medicine_suggestions(
 
     # Generate summary first — medicine suggestions are based on it
     patient_summary = await summarize_patient(
+        db=db,
+        user_id=consultation.patient_id,
+        consultation_id=consultation.id,
         ailment_name=ailment.name if ailment else "Unknown",
         age=compute_age(member.dob) if member and member.dob else 0,
         gender=member.gender if member else "Unknown",
@@ -443,6 +449,9 @@ async def get_ai_medicine_suggestions(
 
     # Generate medicine suggestions
     suggestions = await suggest_medicines(
+        db=db,
+        user_id=consultation.patient_id,
+        consultation_id=consultation.id,
         ailment_name=ailment.name if ailment else "Unknown",
         patient_summary=patient_summary
     )

@@ -29,3 +29,12 @@ class BaseAIProvider(ABC):
             HTTPException 503 if the AI service is unavailable
         """
         pass
+
+    @abstractmethod
+    async def complete_with_usage(self, prompt: str, max_tokens: int = 1000) -> tuple[str, dict]:
+        """
+        Returns (text, usage_dict).
+        usage_dict keys: model, provider,
+                         prompt_tokens, completion_tokens
+        """
+        pass

@@ -1,10 +1,12 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fastapi import HTTPException, status
+from datetime import datetime, timezone
 from app.models.user import User
+from app.models.blocked_token import BlockedToken
 from app.schemas.auth import RegisterRequest, LoginRequest
 from app.utils.hashing import hash_password, verify_password
-from app.utils.jwt import create_access_token
+from app.utils.jwt import create_access_token, decode_access_token
 
 
 async def register_user(db: AsyncSession, data: RegisterRequest) -> User:
@@ -134,3 +136,19 @@ async def refresh_token(current_user: User) -> dict:
         "access_token": new_token,
         "token_type": "bearer"
     }
+
+async def logout_user(current_user: User, db: AsyncSession, token: str):
+    payload = decode_access_token(token)
+    jti = payload.get("jti")
+
+    expires_at = datetime.utcfromtimestamp(payload.get("exp"))
+    blocked = BlockedToken(
+        jti=jti,
+        user_id=current_user.id,
+        blocked_at=datetime.now(timezone.utc),
+        expires_at=expires_at
+    )
+    db.add(blocked)
+    await db.flush()
+
+    return {"message": f"Goodbye {current_user.name}, logged out successfully"}

@@ -23,12 +23,23 @@ from app.services.analytics_service import (
     get_revenue_analytics,
     get_patient_analytics,
 )
+from app.services.token_cleanup_service import (
+    get_blocked_token_stats,
+    cleanup_expired_tokens,
+    cleanup_tokens_older_than,
+    cleanup_api_logs_older_than,
+)
+from app.services.ai_usage_service import get_ai_usage_stats
+from app.services.api_monitor_service import get_api_stats
 from app.schemas.order import DispatchUpdateRequest
 import time
 from datetime import datetime, timezone
 from sqlalchemy import text
 
 from pydantic import BaseModel
+
+class CleanupRequest(BaseModel):
+    days: int = 30
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -428,3 +439,85 @@ async def clear_all_cache(
         "message": f"Cleared {deleted} cache entries",
         "deleted": deleted
     }
+
+
+@router.get(
+    "/tokens/stats",
+    status_code=status.HTTP_200_OK,
+    summary="Blocked token table stats (Admin only)"
+)
+async def blocked_token_stats(
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    return await get_blocked_token_stats(db)
+
+
+@router.delete(
+    "/tokens/cleanup-expired",
+    status_code=status.HTTP_200_OK,
+    summary="Delete expired blocked tokens (Admin only)"
+)
+async def cleanup_expired(
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Safest cleanup — only deletes tokens whose JWT has expired."""
+    return await cleanup_expired_tokens(db)
+
+
+@router.delete(
+    "/tokens/cleanup-older-than",
+    status_code=status.HTTP_200_OK,
+    summary="Delete blocked tokens older than N days (Admin only)"
+)
+async def cleanup_older_than(
+    data: CleanupRequest,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """More aggressive — deletes tokens blocked before N days ago."""
+    return await cleanup_tokens_older_than(db, data.days)
+
+
+# ── AI Usage Monitoring ──
+
+@router.get(
+    "/monitor/ai-usage",
+    status_code=status.HTTP_200_OK,
+    summary="AI token usage stats (Admin only)"
+)
+async def ai_usage_endpoint(
+    days: int = Query(default=30, ge=1, le=365),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    return await get_ai_usage_stats(db, days)
+
+
+# ── API Request Monitoring ──
+
+@router.get(
+    "/monitor/api-requests",
+    status_code=status.HTTP_200_OK,
+    summary="API request stats (Admin only)"
+)
+async def api_requests_endpoint(
+    days: int = Query(default=7, ge=1, le=90),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    return await get_api_stats(db, days)
+
+
+@router.delete(
+    "/monitor/api-logs/cleanup",
+    status_code=status.HTTP_200_OK,
+    summary="Clean up old API request logs (Admin only)"
+)
+async def cleanup_api_logs(
+    data: CleanupRequest,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    return await cleanup_api_logs_older_than(db, data.days)

@@ -415,7 +415,7 @@ const ChangePassword = () => {
 // ── Account stats ──
 const AccountStats = ({ profile }) => {
   const { data: consultations } = useQuery({
-    queryKey: ["consultations"],
+    queryKey: ["consultations", "profile-stats"],
     queryFn: async () => {
       const res = await api.get("/consultations/")
       return Array.isArray(res.data) ? res.data : []
@@ -423,7 +423,7 @@ const AccountStats = ({ profile }) => {
   })
 
   const { data: orders } = useQuery({
-    queryKey: ["orders"],
+    queryKey: ["orders", "profile-stats"],
     queryFn: async () => {
       const res = await api.get("/orders/")
       return Array.isArray(res.data) ? res.data : []
@@ -431,7 +431,7 @@ const AccountStats = ({ profile }) => {
   })
 
   const { data: familyMembers } = useQuery({
-    queryKey: ["family-members"],
+    queryKey: ["family-members", "profile-stats"],
     queryFn: async () => {
       const res = await api.get("/family-members/")
       return Array.isArray(res.data) ? res.data : []

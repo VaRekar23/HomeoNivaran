@@ -37,6 +37,11 @@ class OpenAIProvider(BaseAIProvider):
         because the DB and heavy async work happens elsewhere.
         For high-traffic production apps you'd use AsyncOpenAI instead.
         """
+        text, _ = await self.complete_with_usage(prompt, max_tokens)
+        return text
+        
+            
+    async def complete_with_usage(self, prompt: str, max_tokens: int = 1000) -> tuple[str, dict]:
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -53,11 +58,18 @@ class OpenAIProvider(BaseAIProvider):
                 ]
             )
 
+            usage = {
+                "model":             response.model,
+                "provider":          "openai",
+                "prompt_tokens":     response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+            }
+
             # Extract text from OpenAI response
             # Different structure from Anthropic:
             # Anthropic: response.content[0].text
             # OpenAI:    response.choices[0].message.content
-            return response.choices[0].message.content.strip()
+            return response.choices[0].message.content.strip(), usage
 
         except Exception as e:
             # Catch specific OpenAI errors by string matching

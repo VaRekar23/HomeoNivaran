@@ -24,6 +24,14 @@ class AnthropicProvider(BaseAIProvider):
         """
         Sends prompt to Claude and returns response text.
         """
+        text, _ = await self.complete_with_usage(prompt, max_tokens)
+        return text
+
+    async def complete_with_usage(self, prompt: str, max_tokens: int = 1000) -> tuple[str, dict]:
+        """
+        Calls Anthropic API and returns (text, usage_dict).
+        usage_dict contains model name and token counts.
+        """
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -32,7 +40,15 @@ class AnthropicProvider(BaseAIProvider):
                     {"role": "user", "content": prompt}
                 ]
             )
-            return response.content[0].text.strip()
+
+            usage = {
+                "model":             response.model,
+                "provider":          "anthropic",
+                "prompt_tokens":     response.usage.input_tokens,
+                "completion_tokens": response.usage.output_tokens,
+            }
+
+            return response.content[0].text.strip(), usage
 
         except Exception as e:
             error_str = str(e).lower()
