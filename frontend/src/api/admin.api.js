@@ -16,4 +16,5 @@ export const adminApi = {
   markDelivered: (id) =>
     api.put(`/admin/orders/${id}/delivered`),
   getHealth: () => api.get("/admin/health"),
+  unlockUser: (id) => api.post(`/admin/users/${id}/unlock`),
 }

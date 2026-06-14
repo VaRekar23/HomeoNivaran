@@ -145,3 +145,20 @@ export const useAppHealth = () => {
     refetchInterval: 60000,
   })
 }
+
+export const useUnlockUser = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (userId) => adminApi.unlockUser(userId),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] })
+      toast.success(res.data.message || "Account unlocked successfully")
+    },
+    onError: (e) => {
+      toast.error(
+        e.response?.data?.detail || "Failed to unlock account"
+      )
+    },
+  })
+}

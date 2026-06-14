@@ -29,6 +29,7 @@ from app.services.token_cleanup_service import (
     cleanup_tokens_older_than,
     cleanup_api_logs_older_than,
 )
+from app.services.auth_service import unlock_user
 from app.services.ai_usage_service import get_ai_usage_stats
 from app.services.api_monitor_service import get_api_stats
 from app.schemas.order import DispatchUpdateRequest
@@ -521,3 +522,17 @@ async def cleanup_api_logs(
     db: AsyncSession = Depends(get_db)
 ):
     return await cleanup_api_logs_older_than(db, data.days)
+
+
+@router.post(
+    "/users/{user_id}/unlock",
+    status_code=status.HTTP_200_OK,
+    summary="Unlock a locked user account (Admin only)"
+)
+async def unlock_user_account(
+    user_id: uuid.UUID,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Admin can manually unlock accounts locked by failed logins."""
+    return await unlock_user(db, user_id)

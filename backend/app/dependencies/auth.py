@@ -46,11 +46,10 @@ async def get_current_user(
     
     # Step 2 — Validate if token is blocklisted
     jti = payload.get("jti")
-    result = await db.execute(
-        select(BlockedToken).where(BlockedToken.jti == jti)
-    )
-    if result.scalar_one_or_none():
-        raise credentials_exception
+    if jti:
+        is_blocked = await _check_token_blocked(db, jti, payload)
+        if is_blocked:
+            raise credentials_exception
 
     # Step 3 — Extract user ID from payload
     user_id: str = payload.get("sub")
@@ -130,3 +129,57 @@ async def get_access_token(
     token: str = Depends(oauth2_scheme)
 ) -> str:
     return token
+
+async def _check_token_blocked(
+    db: AsyncSession,
+    jti: str,
+    payload: dict
+) -> bool:
+    """
+    Check if a token JTI is in the blocklist.
+    Checks Redis first (fast), falls back to DB if Redis unavailable.
+    """
+    from app.cache.redis_client import cache_get, cache_set
+
+    cache_key = f"blocked_token:{jti}"
+
+    # ── Try Redis first ──
+    try:
+        cached = await cache_get(cache_key)
+        if cached is not None:
+            # Cache hit — return the cached result
+            return cached.get("blocked", False)
+    except Exception:
+        pass  # Redis unavailable — fall through to DB
+
+    # ── Cache miss or Redis unavailable — check DB ──
+    result = await db.execute(
+        select(BlockedToken).where(BlockedToken.jti == jti)
+    )
+    is_blocked_in_db = result.scalar_one_or_none() is not None
+
+    # ── Write result back to Redis ──
+    try:
+        exp = payload.get("exp", 0)
+        remaining_ttl = int(
+            exp - datetime.now(timezone.utc).timestamp()
+        )
+
+        if is_blocked_in_db and remaining_ttl > 0:
+            # Blocked token — cache for remaining lifetime
+            await cache_set(
+                cache_key,
+                {"blocked": True},
+                ttl_seconds=remaining_ttl
+            )
+        elif not is_blocked_in_db:
+            # Not blocked — cache for 60s to reduce DB hits
+            await cache_set(
+                cache_key,
+                {"blocked": False},
+                ttl_seconds=60
+            )
+    except Exception:
+        pass  # Cache write failed — not critical
+
+    return is_blocked_in_db

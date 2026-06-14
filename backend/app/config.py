@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     # App
     app_name: str = "HomeopathyApp"
     environment: str = "development"
-    debug: bool = True
+    debug: bool = False
 
     # Database
     database_url: str

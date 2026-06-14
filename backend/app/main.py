@@ -28,22 +28,37 @@ from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+logger = logging.getLogger(__name__)
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
+
+        csp = "; ".join([
+            "default-src 'self'",
+            "script-src 'self' https://checkout.razorpay.com",
+            "style-src 'self' https://fonts.googleapis.com",
+            "font-src 'self' https://fonts.gstatic.com",
+            "img-src 'self' data: https:",
+            "connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com",
+            "frame-src https://api.razorpay.com https://checkout.razorpay.com",
+            "object-src 'none'",
+            "frame-ancestors 'none'",
+            "upgrade-insecure-requests",
+        ])
+
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=()"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://www.google.com https://www.gstatic.com; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: https:; "
-            "connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com; "
-            "frame-src https://api.razorpay.com; "
-        )
+        response.headers["Content-Security-Policy"] = csp
+
+        if not request.url.hostname in ("localhost", "127.0.0.1"):
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+
         return response
 
 def setup_logging():
@@ -88,9 +103,60 @@ def setup_logging():
             )
 
 
+def validate_production_settings():
+    """
+    Validates critical settings on startup.
+    Raises immediately if misconfigured — better to crash
+    early than silently run insecurely.
+    """
+    errors = []
+
+    # ── JWT Secret strength ──
+    if not settings.jwt_secret:
+        errors.append(
+            "JWT_SECRET is not set. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    elif len(settings.jwt_secret) < 32:
+        errors.append(
+            f"JWT_SECRET is too short ({len(settings.jwt_secret)} chars). "
+            f"Minimum 32 characters required."
+        )
+    elif settings.jwt_secret in (
+        "secret", "password", "changeme",
+        "your-secret-key", "jwt-secret", "mysecret"
+    ):
+        errors.append(
+            "JWT_SECRET is a known weak value. "
+            "Use a cryptographically random string."
+        )
+
+    # ── Production-specific checks ──
+    if not settings.debug:
+        if not settings.database_url:
+            errors.append("DATABASE_URL is not set.")
+        if not settings.razorpay_key_id:
+            errors.append("RAZORPAY_KEY_ID is not set.")
+        if not settings.openai_api_key:
+            errors.append("OPENAI_API_KEY is not set.")
+
+    if errors:
+        for error in errors:
+            logger.critical(f"STARTUP VALIDATION FAILED: {error}")
+        raise RuntimeError(
+            f"Application cannot start — {len(errors)} configuration "
+            f"error(s):\n" + "\n".join(f"  • {e}" for e in errors)
+        )
+
+    logger.info(
+        f"Startup validation passed. "
+        f"debug={settings.debug}"
+    )
+
+
 def create_app() -> FastAPI:
     setup_logging()
-    logger = logging.getLogger(__name__)
+    validate_production_settings()
 
     app = FastAPI(
         title="Homeopathy Consultation API",
@@ -134,6 +200,21 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    if not settings.debug:
+        # Only enforce in production — would block localhost in dev
+        app.add_middleware(
+            TrustedHostMiddleware,
+            allowed_hosts=[
+                "homeoclinic-backend-362585310201.asia-south1.run.app",
+                "homeonivaran.in",
+                "www.homeonivaran.in",
+                "test.homeonivaran.in",
+                "www.test.homeonivaran.in",
+                # Cloud Run internal URL
+                "homeonivaran-test.web.app",
+            ]
+        )
 
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestLoggerMiddleware)

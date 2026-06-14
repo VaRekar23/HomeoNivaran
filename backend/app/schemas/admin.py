@@ -39,6 +39,8 @@ class UserAdminResponse(BaseModel):
     role: str
     is_active: bool
     created_at: datetime
+    failed_login_attempts: int
+    locked_until: datetime | None = None
 
 
 class UserToggleResponse(BaseModel):

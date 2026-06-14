@@ -7,6 +7,8 @@ import {
   Shield,
   Stethoscope,
   User,
+  LockOpen,
+  Lock,
 } from "lucide-react"
 
 import Card from "../../components/ui/Card"
@@ -14,10 +16,9 @@ import Button from "../../components/ui/Button"
 import EmptyState from "../../components/ui/EmptyState"
 import { PageSpinner } from "../../components/ui/Spinner"
 import ConfirmDialog from "../../components/ui/ConfirmDialog"
-import { useAdminUsers, useToggleUser } from "../../hooks/useAdmin"
-import { formatDate, formatRole } from "../../utils/formatters"
+import { useAdminUsers, useToggleUser, useChangeUserRole, useUnlockUser } from "../../hooks/useAdmin"
+import { formatDate, formatDateTime, formatRole } from "../../utils/formatters"
 
-import { useChangeUserRole } from "../../hooks/useAdmin"
 import Modal from "../../components/ui/Modal"
 
 const ROLE_TABS = [
@@ -37,6 +38,21 @@ const ROLE_COLORS = {
   patient: "bg-blue-50 text-blue-700",
   doctor:  "bg-teal-50 text-teal-700",
   admin:   "bg-slate-100 text-slate-700",
+}
+
+const isAccountLocked = (user) => {
+  if (!user.locked_until) return false
+  return new Date(user.locked_until) > new Date()
+}
+
+const getLockRemainingText = (lockedUntil) => {
+  if (!lockedUntil) return ""
+  const diff = new Date(lockedUntil) - new Date()
+  if (diff <= 0) return "Expired"
+  const minutes = Math.ceil(diff / 1000 / 60)
+  if (minutes < 60) return `${minutes}m remaining`
+  const hours = Math.ceil(minutes / 60)
+  return `${hours}h remaining`
 }
 
 const RoleChangeModal = ({ user, onClose }) => {
@@ -90,9 +106,10 @@ const RoleChangeModal = ({ user, onClose }) => {
 }
 
 // ── User row ──
-const UserRow = ({ user, onToggle, onChangeRole }) => {
+const UserRow = ({ user, onToggle, onChangeRole, onUnlock  }) => {
   const Icon = ROLE_ICONS[user.role] || User
   const canChangeRole = user.role !== "admin"
+  const locked = isAccountLocked(user)
 
   return (
     <div className="flex items-center gap-4 p-4 hover:bg-slate-50 rounded-xl transition-colors">
@@ -114,11 +131,26 @@ const UserRow = ({ user, onToggle, onChangeRole }) => {
               Deactivated
             </span>
           )}
+          {locked && (
+            <span
+              className="text-xs bg-orange-50 text-orange-600 border border-orange-200 px-2 py-0.5 rounded-full flex items-center gap-1"
+              title={`Locked until ${formatDateTime(user.locked_until)}`}
+            >
+              <Lock className="w-2.5 h-2.5" />
+              Locked · {getLockRemainingText(user.locked_until)}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
           <span>{user.email}</span>
           <span>{user.phone}</span>
           <span>Joined {formatDate(user.created_at)}</span>
+          {user.failed_login_attempts > 0 && (
+            <span className="text-orange-400">
+              {user.failed_login_attempts} failed login
+              {user.failed_login_attempts !== 1 ? "s" : ""}
+            </span>
+          )}
         </div>
       </div>
 
@@ -132,6 +164,17 @@ const UserRow = ({ user, onToggle, onChangeRole }) => {
           >
             <Shield className="w-3.5 h-3.5" />
             Change Role
+          </Button>
+        )}
+
+        {locked && (
+          <Button
+            variant="ghost"
+            onClick={() => onUnlock(user)}
+            className="text-xs text-orange-600 border border-orange-200 hover:bg-orange-50"
+          >
+            <LockOpen className="w-3.5 h-3.5" />
+            Unlock
           </Button>
         )}
 
@@ -162,9 +205,11 @@ const UsersPage = () => {
   const [search, setSearch] = useState("")
   const [selectedUser, setSelectedUser] = useState(null)
   const [roleChangeUser, setRoleChangeUser] = useState(null)
+  const [unlockUser, setUnlockUser] = useState(null)
 
   const { data: users = [], isLoading } = useAdminUsers()
   const toggleMutation = useToggleUser()
+  const unlockMutation = useUnlockUser()
 
   const byRole =
     activeTab === "all"
@@ -187,6 +232,7 @@ const UsersPage = () => {
   }, {})
 
   const activeCount = users.filter((u) => u.is_active).length
+  const lockedCount = users.filter((u) => isAccountLocked(u)).length
 
   if (isLoading) return <PageSpinner />
 
@@ -199,9 +245,30 @@ const UsersPage = () => {
           <h1 className="text-slate-900 mb-1">Users</h1>
           <p className="text-slate-500 text-sm">
             {users.length} total · {activeCount} active
+            {lockedCount > 0 && (
+              <span className="text-orange-500 ml-1">
+                · {lockedCount} locked
+              </span>
+            )}
           </p>
         </div>
       </div>
+
+      {lockedCount > 0 && (
+        <div className="mb-5 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
+          <Lock className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-orange-800">
+              {lockedCount} account{lockedCount !== 1 ? "s" : ""} temporarily locked
+            </p>
+            <p className="text-xs text-orange-600 mt-0.5">
+              Account{lockedCount !== 1 ? "s" : ""} locked due to too many
+              failed login attempts. {lockedCount !== 1 ? "They" : "It"} will
+              unlock automatically, or you can unlock manually below.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
@@ -282,6 +349,7 @@ const UsersPage = () => {
                 user={user}
                 onToggle={setSelectedUser}
                 onChangeRole={setRoleChangeUser}
+                onUnlock={setUnlockUser}
               />
             ))}
           </div>
@@ -325,6 +393,27 @@ const UsersPage = () => {
         }
         variant={selectedUser?.is_active ? "danger" : "primary"}
         loading={toggleMutation.isPending}
+      />
+
+      {/* Unlock confirm */}
+      <ConfirmDialog
+        isOpen={!!unlockUser}
+        onClose={() => setUnlockUser(null)}
+        onConfirm={async () => {
+          await unlockMutation.mutateAsync(unlockUser.id)
+          setUnlockUser(null)
+        }}
+        title={`Unlock ${unlockUser?.name}?`}
+        message={
+          unlockUser
+            ? `This account was locked after ${unlockUser.failed_login_attempts} failed login attempt${
+                unlockUser.failed_login_attempts !== 1 ? "s" : ""
+              }. Unlocking will reset the counter and allow immediate login. Only do this if you trust the account owner made legitimate attempts.`
+            : ""
+        }
+        confirmLabel="Yes, Unlock Account"
+        variant="primary"
+        loading={unlockMutation.isPending}
       />
     </div>
   )

@@ -1,12 +1,19 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fastapi import HTTPException, status
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from app.models.user import User
 from app.models.blocked_token import BlockedToken
 from app.schemas.auth import RegisterRequest, LoginRequest
 from app.utils.hashing import hash_password, verify_password
 from app.utils.jwt import create_access_token, decode_access_token
+
+
+LOCKOUT_THRESHOLDS = [
+    (5,  timedelta(minutes=15)),   # 5 failures → 15 min lockout
+    (10, timedelta(hours=1)),      # 10 failures → 1 hour lockout
+    (20, timedelta(hours=24)),     # 20 failures → 24 hour lockout
+]
 
 
 async def register_user(db: AsyncSession, data: RegisterRequest) -> User:
@@ -79,25 +86,61 @@ async def login_user(db: AsyncSession, data: LoginRequest) -> dict:
     )
     user = result.scalar_one_or_none()
 
-    # Step 2 — Verify password
+    # Step 2 - Check for lockout due to too many failed attempts
+    if user and user.locked_until:
+        now = datetime.now(timezone.utc)
+
+        locked_until = user.locked_until
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+
+        if now < locked_until:
+            remaining = int((locked_until - now).total_seconds() / 60)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    f"Account temporarily locked due to too many "
+                    f"failed login attempts. "
+                    f"Try again in {remaining} minute(s)."
+                )
+            )
+        else:
+            # Lockout has expired — reset counters
+            user.locked_until = None
+            user.failed_login_attempts = 0
+            user.last_failed_login = None
+            await db.flush()
+
+    # Step 3 — Verify password
     # IMPORTANT: check user exists AND password matches in same condition
     # Never reveal whether the email exists or the password was wrong
     # Both cases return the same "Invalid credentials" error
     if not user or not verify_password(data.password, user.password_hash):
+        if user:
+            await _handle_failed_login(db, user)
+            await db.commit()
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    # Step 3 — Check account is active
+    # Step 4 — Check account is active
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated. Please contact support."
         )
+    
+    # Step 5 — Success — reset failure counter
+    if user.failed_login_attempts > 0:
+        user.failed_login_attempts = 0
+        user.locked_until          = None
+        user.last_failed_login     = None
+        await db.flush()
 
-    # Step 4 — Create JWT token
+    # Step 6 — Create JWT token
     # payload = what gets encoded inside the token
     access_token = create_access_token(data={
         "sub": str(user.id),    # sub = subject = user's unique identifier
@@ -105,11 +148,11 @@ async def login_user(db: AsyncSession, data: LoginRequest) -> dict:
         "email": user.email     # convenient to have without a DB lookup
     })
 
-    # Step 5 — Return token + user info
+    # Step 6 — Return token + user info
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user            # Pydantic will serialize using LoggedInUser schema
+        "user": user
     }
 
 
@@ -151,4 +194,63 @@ async def logout_user(current_user: User, db: AsyncSession, token: str):
     db.add(blocked)
     await db.flush()
 
+    try:
+        from app.cache.redis_client import cache_set
+        remaining = 0
+        if expires_at:
+            remaining = int(
+                (expires_at - datetime.now(timezone.utc)).total_seconds()
+            )
+        if remaining > 0:
+            await cache_set(
+                f"blocked_token:{jti}",
+                {"blocked": True},
+                ttl_seconds=remaining
+            )
+    except Exception:
+        pass
+
     return {"message": f"Goodbye {current_user.name}, logged out successfully"}
+
+async def _handle_failed_login(db: AsyncSession, user: User) -> None:
+    """
+    Increments failed login counter and locks account if threshold reached.
+    Called only when user exists but password is wrong.
+    """
+    user.failed_login_attempts += 1
+    user.last_failed_login = datetime.now(timezone.utc)
+
+    # Check if we should lock the account
+    lockout_duration = None
+    for threshold, duration in reversed(LOCKOUT_THRESHOLDS):
+        if user.failed_login_attempts >= threshold:
+            lockout_duration = duration
+            break
+
+    if lockout_duration:
+        user.locked_until = datetime.now(timezone.utc) + lockout_duration
+        
+    await db.flush()
+
+async def unlock_user(db: AsyncSession, user_id: str) -> dict:
+    result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    was_locked = user.locked_until is not None
+    user.locked_until          = None
+    user.failed_login_attempts = 0
+    user.last_failed_login     = None
+    await db.flush()
+
+    return {
+        "message":    f"Account unlocked for {user.email}",
+        "was_locked": was_locked,
+    }

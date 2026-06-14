@@ -1,7 +1,7 @@
 from email.headerregistry import Address
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Boolean, Enum, DateTime
+from sqlalchemy import String, Boolean, Enum, DateTime, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -76,4 +76,17 @@ class User(Base):
         "DoctorAvailability",
         back_populates="doctor",
         cascade="all, delete-orphan"
+    )
+    failed_login_attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+    last_failed_login: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
     )

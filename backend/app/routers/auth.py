@@ -12,8 +12,22 @@ from app.services import auth_service
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+
+def get_real_ip(request: Request) -> str:
+    """
+    Used by slowapi for rate limiting.
+    Must use real IP — not spoofable proxy headers in dev.
+    """
+    from app.config import settings
+    if not settings.debug:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_real_ip)
 
 
 @router.post(
